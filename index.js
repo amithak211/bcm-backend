@@ -8,23 +8,28 @@ import fs from "fs";
 
 dotenv.config();
 const app = express();
-app.use(cors({ origin: "*" }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Multer setup
+// Middleware
+app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"] }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+/* ------------------------- MULTER SETUP ------------------------- */
 const upload = multer({ dest: "uploads/" });
 
-// Cloudinary config
+/* ------------------------- CLOUDINARY CONFIG ------------------------- */
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// MongoDB connect
+/* ------------------------- MONGODB CONNECTION ------------------------- */
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err.message));
 
@@ -59,7 +64,7 @@ const Message = mongoose.model("Message", messageSchema);
 app.get("/", (req, res) => res.send("✅ BCWD Hostel Backend Working"));
 
 /* ------------------------- EVENT ROUTES ------------------------- */
-// Fetch events
+// Fetch all events
 app.get("/events", async (req, res) => {
   try {
     const events = await Event.find().sort({ date: 1 });
@@ -69,14 +74,16 @@ app.get("/events", async (req, res) => {
   }
 });
 
-// Create event
+// Create new event
 app.post("/events", upload.single("image"), async (req, res) => {
   try {
     let imageUrl = "";
     let imagePublicId = "";
 
     if (req.file) {
-      const result = await cloudinary.uploader.upload(req.file.path);
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "bcwd_events",
+      });
       imageUrl = result.secure_url;
       imagePublicId = result.public_id;
       fs.unlinkSync(req.file.path);
@@ -116,17 +123,22 @@ app.put("/events/:id", upload.single("image"), async (req, res) => {
       if (event.imagePublicId) {
         await cloudinary.uploader.destroy(event.imagePublicId);
       }
-      const result = await cloudinary.uploader.upload(req.file.path);
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "bcwd_events",
+      });
       updateData.imageUrl = result.secure_url;
       updateData.imagePublicId = result.public_id;
       fs.unlinkSync(req.file.path);
     }
 
-    const updatedEvent = await Event.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-    });
+    const updatedEvent = await Event.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    );
     res.json(updatedEvent);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to update event" });
   }
 });
@@ -144,54 +156,50 @@ app.delete("/events/:id", async (req, res) => {
     await Event.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: "Event deleted successfully" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to delete event" });
   }
 });
 
 /* ------------------------- UPDATE ROUTES ------------------------- */
-// Fetch updates
 app.get("/updates", async (req, res) => {
   try {
     const updates = await Update.find().sort({ createdAt: -1 });
     res.json(updates);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to fetch updates" });
   }
 });
 
-// Create update
 app.post("/updates", async (req, res) => {
   try {
     const update = new Update({ message: req.body.message });
     await update.save();
     res.status(201).json(update);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to create update" });
   }
 });
 
-// Delete update
 app.delete("/updates/:id", async (req, res) => {
   try {
     await Update.findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to delete update" });
   }
 });
 
 /* ------------------------- MESSAGE ROUTES ------------------------- */
-// ✅ Fetch all contact messages
 app.get("/messages", async (req, res) => {
   try {
     const messages = await Message.find().sort({ createdAt: -1 });
     res.json(messages);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to fetch messages" });
   }
 });
 
-// ✅ Create a new contact message (from Contact.jsx)
 app.post("/messages", async (req, res) => {
   try {
     const { name, email, message } = req.body;
@@ -201,17 +209,16 @@ app.post("/messages", async (req, res) => {
     const newMsg = new Message({ name, email, message });
     await newMsg.save();
     res.status(201).json(newMsg);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to save message" });
   }
 });
 
-// ✅ Delete message
 app.delete("/messages/:id", async (req, res) => {
   try {
     await Message.findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Failed to delete message" });
   }
 });
